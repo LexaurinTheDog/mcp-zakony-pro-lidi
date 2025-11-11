@@ -7,13 +7,13 @@ import type { SearchParams } from '../types/index.js';
 
 export const SEARCH_LAWS_TOOL = {
   name: 'search_laws',
-  description: 'Search for Czech laws and legal documents on www.zakonyprolidi.cz. Returns a list of matching documents with their codes, titles, and URLs.',
+  description: 'Search for Czech laws and legal documents on www.zakonyprolidi.cz. Use this tool when the user asks to find, search for, or locate Czech laws (zákony), regulations (vyhlášky), or legal documents. Responds to both Czech and English queries. Returns a list of matching documents with their codes, titles, and URLs. Examples: "najdi občanský zákoník", "find Civil Code", "vyhledej zákon o daních z příjmů", "search law 89/2012".',
   inputSchema: {
     type: 'object',
     properties: {
       query: {
         type: 'string',
-        description: 'Search query - can be law code (e.g., "89/2012"), section number (e.g., "§1000"), abbreviated reference (e.g., "OZ"), or law title'
+        description: 'Search query - can be law code (e.g., "89/2012", "280/2009"), section number (e.g., "§1000"), abbreviated reference (e.g., "OZ" for občanský zákoník, "DŘ" for daňový řád), Czech law name (e.g., "občanský zákoník", "daňový řád"), or English name (e.g., "Civil Code", "Tax Code")'
       },
       type: {
         type: 'string',

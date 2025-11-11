@@ -1,6 +1,6 @@
 {
   "name": "zakonyprolidi-mcp-server",
-  "version": "1.0.0",
+  "version": "1.1.0",
   "description": "MCP server for searching and fetching Czech legal documents from www.zakonyprolidi.cz",
   "type": "module",
   "main": "build/index.js",

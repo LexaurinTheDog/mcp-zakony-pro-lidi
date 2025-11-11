@@ -7,21 +7,21 @@ import type { SearchSectionsParams } from '../types/index.js';
 
 export const SEARCH_SECTIONS_TOOL = {
   name: 'search_sections',
-  description: 'Find specific sections or paragraphs across Czech laws using section numbers or keywords. Useful for finding where specific provisions are located.',
+  description: 'Find specific sections, paragraphs, or provisions (ustanovení, paragrafy) across Czech laws using section numbers or keywords. Use this tool when the user asks to find, search for, or locate specific provisions, sections about a topic, or wants to know what a law says about something. Responds to both Czech and English queries. Examples: "najdi ustanovení o přeplatku", "find sections about tax overpayment", "co říká zákon o promlčení", "what does the law say about prescription", "najdi §154".',
   inputSchema: {
     type: 'object',
     properties: {
       sectionNumber: {
         type: 'string',
-        description: 'Section/paragraph number to search for (e.g., "§1000")'
+        description: 'Section/paragraph number to search for (e.g., "§1000", "§154", "paragraf 100"). Can include or omit the § symbol.'
       },
       keyword: {
         type: 'string',
-        description: 'Keyword or phrase to search for within sections'
+        description: 'Czech or English keyword or phrase to search for within sections (e.g., "přeplatek" for overpayment, "promlčení" for prescription, "daň" for tax, "úrok" for interest)'
       },
       lawCode: {
         type: 'string',
-        description: 'Optional law code to limit search to a specific law (e.g., "89/2012")'
+        description: 'Optional law code to limit search to a specific law (e.g., "89/2012" for Civil Code, "280/2009" for Tax Code, "586/1992" for Income Tax Act)'
       }
     }
   }

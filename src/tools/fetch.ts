@@ -7,17 +7,17 @@ import type { FetchLawParams } from '../types/index.js';
 
 export const FETCH_LAW_TOOL = {
   name: 'fetch_law',
-  description: 'Retrieve the full text of a specific Czech law from www.zakonyprolidi.cz. Returns the complete law text in current consolidated form, including all sections.',
+  description: 'Retrieve the full text of a specific Czech law from www.zakonyprolidi.cz. Use this tool when the user asks to get, fetch, show, or read the content of a specific law or section. Responds to both Czech and English queries. Returns the complete law text in current consolidated form (aktuální konsolidované znění), including all sections. Examples: "načti občanský zákoník", "get law 89/2012", "dej mi §154 daňového řádu", "show me section 1000 of the Civil Code".',
   inputSchema: {
     type: 'object',
     properties: {
       lawCode: {
         type: 'string',
-        description: 'Law code in format "number/year" (e.g., "89/2012" for Civil Code)'
+        description: 'Law code in format "number/year" (e.g., "89/2012" for Civil Code/občanský zákoník, "280/2009" for Tax Code/daňový řád, "586/1992" for Income Tax Act/zákon o daních z příjmů)'
       },
       section: {
         type: 'string',
-        description: 'Optional specific section number to retrieve (e.g., "§1000")'
+        description: 'Optional specific section/paragraph number to retrieve (e.g., "§1000", "§154", "paragraf 100"). Can include or omit the § symbol.'
       }
     },
     required: ['lawCode']

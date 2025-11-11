@@ -135,7 +135,7 @@ export async function fetchLaw(params: FetchLawParams): Promise<LawDocument> {
     for (const selector of contentSelectors) {
       const $candidate = $(selector);
       if ($candidate.length > 0) {
-        $content = $candidate;
+        $content = $candidate as any;
         break;
       }
     }
