@@ -88,18 +88,16 @@ Find section §1000 in the Civil Code
 
 ### Setup
 
-1. **Clone or download this repository:**
+1. **Clone this repository:**
 
 ```bash
-cd C:\Users\vojte
-git clone <your-repo-url> zakonyprolidi-mcp-server
-# Or if you created it manually, it's already there
+git clone https://github.com/LexaurinTheDog/mcp-zakony-pro-lidi.git
+cd mcp-zakony-pro-lidi
 ```
 
 2. **Install dependencies:**
 
 ```bash
-cd zakonyprolidi-mcp-server
 npm install
 ```
 
@@ -111,15 +109,19 @@ npm run build
 
 ### Configure Claude Code
 
-Add the MCP server to Claude Code using the stdio transport:
+Add the MCP server to Claude Code using the stdio transport.
 
+**On Windows (PowerShell/CMD):**
 ```bash
-claude mcp add --transport stdio zakonyprolidi -- node C:\Users\vojte\zakonyprolidi-mcp-server\build\index.js
+claude mcp add --transport stdio zakonyprolidi -- node %CD%\build\index.js
 ```
 
+**On Linux/macOS or WSL:**
 ```bash
-claude mcp add --transport stdio zakonyprolidi --node /mnt/c/Users/vojte/zakonyprolidi-mcp-server/build/index.js
+claude mcp add --transport stdio zakonyprolidi -- node "$(pwd)/build/index.js"
 ```
+
+**Note:** Make sure you're in the project directory when running this command, or use absolute paths.
 
 ### Verify Installation
 
