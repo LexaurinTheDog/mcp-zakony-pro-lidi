@@ -38,58 +38,52 @@ export async function searchLaws(params: SearchParams): Promise<SearchResult[]> 
 
     const response = await axios.get(`${searchUrl}?${searchParams.toString()}`, {
       headers: {
-        'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36'
+        'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36',
+        'Accept': 'text/html,application/xhtml+xml,application/xml;q=0.9,image/webp,*/*;q=0.8',
+        'Accept-Language': 'cs,en;q=0.9',
+        'Accept-Encoding': 'gzip, deflate, br',
+        'Connection': 'keep-alive',
+        'Upgrade-Insecure-Requests': '1'
       }
     });
 
     const $ = cheerio.load(response.data);
     const results: SearchResult[] = [];
 
-    // Parse search results from the page
-    $('.search-result-item, .result-item, .law-item').each((_, element) => {
+    // Parse all links that point to laws (format: /cs/YYYY-NUMBER)
+    $('a[href*="/cs/"]').each((_, element) => {
       if (results.length >= limit) return false;
 
-      const $item = $(element);
-      const link = $item.find('a').first();
-      const title = link.text().trim();
-      const href = link.attr('href');
+      const $link = $(element);
+      const href = $link.attr('href');
+      const linkText = $link.text().trim();
 
-      if (href && title) {
-        const code = extractLawCode(title, href);
-        const url = href.startsWith('http') ? href : `${BASE_URL}${href}`;
+      // Skip navigation links, only process law links
+      if (href && href.match(/\/cs\/\d{4}-\d+/)) {
+        const code = extractLawCode(linkText, href);
+
+        // Try to get title from surrounding text or next elements
+        let title = linkText;
+        const parent = $link.parent();
+        const parentText = parent.text().trim();
+
+        // If parent has more text than just the link, use that as title
+        if (parentText.length > linkText.length + 10) {
+          title = parentText;
+        }
+
+        // Clean up title
+        title = title.replace(/\s+/g, ' ').trim();
 
         results.push({
           code,
-          title,
-          url,
+          title: title || code,
+          url: href.startsWith('http') ? href : `${BASE_URL}${href}`,
           type: type || 'law',
           year: year || extractYear(code)
         });
       }
     });
-
-    // If no structured results found, try alternative parsing
-    if (results.length === 0) {
-      $('a[href*="/cs/"]').each((_, element) => {
-        if (results.length >= limit) return false;
-
-        const $link = $(element);
-        const href = $link.attr('href');
-        const text = $link.text().trim();
-
-        if (href && text && href.includes('/cs/') && text.length > 5) {
-          const code = extractLawCode(text, href);
-          if (code) {
-            results.push({
-              code,
-              title: text,
-              url: href.startsWith('http') ? href : `${BASE_URL}${href}`,
-              type: 'law'
-            });
-          }
-        }
-      });
-    }
 
     return results;
   } catch (error) {
@@ -109,7 +103,12 @@ export async function fetchLaw(params: FetchLawParams): Promise<LawDocument> {
 
     const response = await axios.get(lawUrl, {
       headers: {
-        'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36'
+        'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36',
+        'Accept': 'text/html,application/xhtml+xml,application/xml;q=0.9,image/webp,*/*;q=0.8',
+        'Accept-Language': 'cs,en;q=0.9',
+        'Accept-Encoding': 'gzip, deflate, br',
+        'Connection': 'keep-alive',
+        'Upgrade-Insecure-Requests': '1'
       }
     });
 
@@ -140,19 +139,35 @@ export async function fetchLaw(params: FetchLawParams): Promise<LawDocument> {
       }
     }
 
-    // Extract sections
-    $content.find('div[id^="par"], .section, .paragraph').each((_, element) => {
-      const $section = $(element);
-      const sectionId = $section.attr('id') || '';
-      const sectionNumber = sectionId.replace('par', '§') || `§${sections.length + 1}`;
-      const sectionTitle = $section.find('h2, h3, .section-title').first().text().trim();
-      const sectionText = $section.text().trim();
+    // Extract sections - zakonyprolidi.cz uses <h3> for paragraphs
+    $content.find('h3').each((_, element) => {
+      const $heading = $(element);
+      const headingText = $heading.text().trim();
 
-      if (sectionText) {
+      // Check if this is a section/paragraph (starts with §)
+      const sectionMatch = headingText.match(/§\s*(\d+[a-z]?)/i);
+      if (sectionMatch) {
+        const sectionNumber = `§${sectionMatch[1]}`;
+
+        // Extract title (text after section number)
+        const sectionTitle = headingText.replace(/§\s*\d+[a-z]?\s*/i, '').trim();
+
+        // Get text content from following elements until next h3
+        let sectionText = '';
+        let $next = $heading.next();
+
+        while ($next.length > 0 && $next.prop('tagName') !== 'H3' && $next.prop('tagName') !== 'H2') {
+          const text = $next.text().trim();
+          if (text) {
+            sectionText += text + '\n\n';
+          }
+          $next = $next.next();
+        }
+
         sections.push({
           number: sectionNumber,
           title: sectionTitle || undefined,
-          text: sectionText
+          text: sectionText.trim() || headingText
         });
       }
     });
@@ -192,7 +207,12 @@ export async function getLawChanges(params: GetChangesParams): Promise<LawChange
 
     const response = await axios.get(changesUrl, {
       headers: {
-        'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36'
+        'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36',
+        'Accept': 'text/html,application/xhtml+xml,application/xml;q=0.9,image/webp,*/*;q=0.8',
+        'Accept-Language': 'cs,en;q=0.9',
+        'Accept-Encoding': 'gzip, deflate, br',
+        'Connection': 'keep-alive',
+        'Upgrade-Insecure-Requests': '1'
       }
     });
 
@@ -252,7 +272,12 @@ export async function searchSections(params: SearchSectionsParams): Promise<Sect
 
     const response = await axios.get(searchUrl, {
       headers: {
-        'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36'
+        'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36',
+        'Accept': 'text/html,application/xhtml+xml,application/xml;q=0.9,image/webp,*/*;q=0.8',
+        'Accept-Language': 'cs,en;q=0.9',
+        'Accept-Encoding': 'gzip, deflate, br',
+        'Connection': 'keep-alive',
+        'Upgrade-Insecure-Requests': '1'
       }
     });
 
