@@ -348,9 +348,10 @@ function extractLawCode(title: string, url: string): string {
   }
 
   // Try to extract from URL
-  const urlMatch = url.match(/\/cs\/(\d+-\d+)/);
+  const urlMatch = url.match(/\/cs\/(\d{4})-(\d+)/);
   if (urlMatch) {
-    return urlMatch[1].replace('-', '/');
+    const [, year, number] = urlMatch;
+    return `${number}/${year}`;
   }
 
   return title.substring(0, 50);

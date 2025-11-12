@@ -1,8 +1,9 @@
 /**
- * Search laws tool implementation
+ * Search laws tool implementation with multi-source fallback
  */
 
-import { searchLaws } from '../scrapers/zakonyprolidi.js';
+import { searchLaws as searchZakonyprolidi } from '../scrapers/zakonyprolidi.js';
+import { searchLaws as searchKurzy } from '../scrapers/kurzy.js';
 import type { SearchParams } from '../types/index.js';
 
 export const SEARCH_LAWS_TOOL = {
@@ -41,14 +42,32 @@ export async function handleSearchLaws(args: unknown) {
     throw new Error('Query parameter is required');
   }
 
-  const results = await searchLaws(params);
+  let results: any[] = [];
+  let source = 'zakonyprolidi.cz';
+
+  // Try primary source: zakonyprolidi.cz
+  try {
+    results = await searchZakonyprolidi(params);
+  } catch (error) {
+    console.error('Zakonyprolidi search failed:', error);
+  }
+
+  // Fallback to kurzy.cz if primary source returned no results
+  if (results.length === 0) {
+    try {
+      results = await searchKurzy(params);
+      source = 'kurzy.cz';
+    } catch (error) {
+      console.error('Kurzy search failed:', error);
+    }
+  }
 
   if (results.length === 0) {
     return {
       content: [
         {
           type: 'text',
-          text: `No results found for query: "${params.query}"`
+          text: `No results found for query: "${params.query}" on zakonyprolidi.cz or kurzy.cz`
         }
       ]
     };
@@ -62,7 +81,7 @@ export async function handleSearchLaws(args: unknown) {
     content: [
       {
         type: 'text',
-        text: `Found ${results.length} result(s) for "${params.query}":\n\n${formattedResults}`
+        text: `Found ${results.length} result(s) for "${params.query}" (source: ${source}):\n\n${formattedResults}`
       }
     ]
   };

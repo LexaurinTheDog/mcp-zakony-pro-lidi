@@ -31,7 +31,7 @@ class ZakonProLidiServer {
     this.server = new Server(
       {
         name: 'zakonyprolidi-mcp-server',
-        version: '1.1.2'
+        version: '1.2.0'
       },
       {
         capabilities: {

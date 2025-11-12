@@ -1,8 +1,9 @@
 /**
- * Fetch law tool implementation
+ * Fetch law tool implementation with multi-source fallback
  */
 
-import { fetchLaw } from '../scrapers/zakonyprolidi.js';
+import { fetchLaw as fetchZakonyprolidi } from '../scrapers/zakonyprolidi.js';
+import { fetchLaw as fetchKurzy } from '../scrapers/kurzy.js';
 import type { FetchLawParams } from '../types/index.js';
 
 export const FETCH_LAW_TOOL = {
@@ -31,10 +32,27 @@ export async function handleFetchLaw(args: unknown) {
     throw new Error('lawCode parameter is required');
   }
 
-  const law = await fetchLaw(params);
+  let law;
+  let source = 'zakonyprolidi.cz';
+
+  // Try primary source: zakonyprolidi.cz
+  try {
+    law = await fetchZakonyprolidi(params);
+  } catch (error) {
+    console.error('Zakonyprolidi fetch failed:', error);
+
+    // Fallback to kurzy.cz
+    try {
+      law = await fetchKurzy(params);
+      source = 'kurzy.cz';
+    } catch (fallbackError) {
+      throw new Error(`Failed to fetch law ${params.lawCode} from both sources: ${error instanceof Error ? error.message : 'Unknown error'}`);
+    }
+  }
 
   let responseText = `# ${law.title}\n\n`;
   responseText += `**Law Code:** ${law.code}\n`;
+  responseText += `**Source:** ${source}\n`;
   responseText += `**URL:** ${law.url}\n`;
 
   if (law.effectiveDate) {

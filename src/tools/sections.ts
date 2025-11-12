@@ -1,8 +1,9 @@
 /**
- * Search sections tool implementation
+ * Search sections tool implementation with multi-source fallback
  */
 
-import { searchSections } from '../scrapers/zakonyprolidi.js';
+import { searchSections as searchSectionsZakonyprolidi } from '../scrapers/zakonyprolidi.js';
+import { searchSections as searchSectionsKurzy } from '../scrapers/kurzy.js';
 import type { SearchSectionsParams } from '../types/index.js';
 
 export const SEARCH_SECTIONS_TOOL = {
@@ -34,7 +35,25 @@ export async function handleSearchSections(args: unknown) {
     throw new Error('At least one of sectionNumber or keyword is required');
   }
 
-  const sections = await searchSections(params);
+  let sections: any[] = [];
+  let source = 'zakonyprolidi.cz';
+
+  // Try primary source: zakonyprolidi.cz
+  try {
+    sections = await searchSectionsZakonyprolidi(params);
+  } catch (error) {
+    console.error('Zakonyprolidi sections search failed:', error);
+  }
+
+  // Fallback to kurzy.cz if primary source returned no results (and we have lawCode + sectionNumber)
+  if (sections.length === 0 && params.lawCode && params.sectionNumber) {
+    try {
+      sections = await searchSectionsKurzy(params);
+      source = 'kurzy.cz';
+    } catch (error) {
+      console.error('Kurzy sections search failed:', error);
+    }
+  }
 
   if (sections.length === 0) {
     const searchDesc = [
@@ -62,6 +81,7 @@ export async function handleSearchSections(args: unknown) {
   ].filter(Boolean).join(' | ');
 
   responseText += `**Search:** ${searchDesc}\n`;
+  responseText += `**Source:** ${source}\n`;
   responseText += `**Results:** ${sections.length} section(s) found\n\n`;
   responseText += '---\n\n';
 
