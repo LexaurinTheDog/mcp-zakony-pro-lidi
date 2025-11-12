@@ -1,0 +1,13 @@
+{
+  "mcp": {
+    "servers": {
+      "zakonyprolidi": {
+        "command": "node",
+        "args": [
+          "/absolute/path/to/zakonyprolidi-mcp-server/build/index.js"
+        ],
+        "transport": "stdio"
+      }
+    }
+  }
+}

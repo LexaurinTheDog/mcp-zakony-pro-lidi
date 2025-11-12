@@ -291,9 +291,11 @@ npm install
 npm run build
 ```
 
-#### Konfigurace Claude Code
+#### Konfigurace AI CLI
 
-Přidejte MCP server do Claude Code pomocí stdio transportu.
+Tento MCP server podporuje následující AI CLI systémy:
+
+##### Claude Code CLI
 
 **Na Windows (PowerShell/CMD):**
 ```bash
@@ -305,7 +307,43 @@ claude mcp add --transport stdio zakonyprolidi -- node %CD%\build\index.js
 claude mcp add --transport stdio zakonyprolidi -- node "$(pwd)/build/index.js"
 ```
 
-**Poznámka:** Ujistěte se, že jste v adresáři projektu při spuštění tohoto příkazu, nebo použijte absolutní cesty.
+##### OpenAI Codex CLI
+
+Přidejte do `~/.codex/config.toml`:
+```toml
+[[mcp.servers]]
+name = "zakonyprolidi"
+command = "node"
+args = ["/absolute/path/to/build/index.js"]
+transport = "stdio"
+```
+
+📖 **[Podrobný průvodce pro Codex](docs/CODEX_SETUP.md)**
+
+##### Google Gemini CLI
+
+```bash
+gemini mcp add zakonyprolidi --command "node /absolute/path/to/build/index.js"
+```
+
+Nebo přidejte do `~/.gemini/config.json`:
+```json
+{
+  "mcp": {
+    "servers": {
+      "zakonyprolidi": {
+        "command": "node",
+        "args": ["/absolute/path/to/build/index.js"],
+        "transport": "stdio"
+      }
+    }
+  }
+}
+```
+
+📖 **[Podrobný průvodce pro Gemini](docs/GEMINI_SETUP.md)**
+
+**Poznámka:** Ujistěte se, že používáte absolutní cesty k `build/index.js`.
 
 #### Ověření instalace
 
@@ -568,9 +606,11 @@ npm install
 npm run build
 ```
 
-#### Configure Claude Code
+#### Configure AI CLI
 
-Add the MCP server to Claude Code using the stdio transport.
+This MCP server supports the following AI CLI systems:
+
+##### Claude Code CLI
 
 **On Windows (PowerShell/CMD):**
 ```bash
@@ -582,7 +622,43 @@ claude mcp add --transport stdio zakonyprolidi -- node %CD%\build\index.js
 claude mcp add --transport stdio zakonyprolidi -- node "$(pwd)/build/index.js"
 ```
 
-**Note:** Make sure you're in the project directory when running this command, or use absolute paths.
+##### OpenAI Codex CLI
+
+Add to `~/.codex/config.toml`:
+```toml
+[[mcp.servers]]
+name = "zakonyprolidi"
+command = "node"
+args = ["/absolute/path/to/build/index.js"]
+transport = "stdio"
+```
+
+📖 **[Detailed Codex Setup Guide](docs/CODEX_SETUP.md)**
+
+##### Google Gemini CLI
+
+```bash
+gemini mcp add zakonyprolidi --command "node /absolute/path/to/build/index.js"
+```
+
+Or add to `~/.gemini/config.json`:
+```json
+{
+  "mcp": {
+    "servers": {
+      "zakonyprolidi": {
+        "command": "node",
+        "args": ["/absolute/path/to/build/index.js"],
+        "transport": "stdio"
+      }
+    }
+  }
+}
+```
+
+📖 **[Detailed Gemini Setup Guide](docs/GEMINI_SETUP.md)**
+
+**Note:** Make sure to use absolute paths to `build/index.js`.
 
 #### Verify Installation
 

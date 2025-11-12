@@ -1,0 +1,22 @@
+# Example OpenAI Codex CLI configuration for zakonyprolidi MCP server
+#
+# This file should be added to your ~/.codex/config.toml
+# Or %USERPROFILE%\.codex\config.toml on Windows
+#
+# Replace /path/to/ with the actual absolute path to your installation
+
+[[mcp.servers]]
+name = "zakonyprolidi"
+command = "node"
+# Linux/macOS/WSL path example:
+args = ["/home/username/zakonyprolidi-mcp-server/build/index.js"]
+# Windows path example (uncomment and modify):
+# args = ["C:\\Users\\YourUsername\\zakonyprolidi-mcp-server\\build\\index.js"]
+transport = "stdio"
+
+# Optional: Set custom timeout (in milliseconds)
+# timeout = 60000
+
+# Optional: Set environment variables
+# [mcp.servers.env]
+# NODE_ENV = "production"

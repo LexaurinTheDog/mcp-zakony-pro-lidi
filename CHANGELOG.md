@@ -7,6 +7,15 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [1.3.1] - 2025-11-12
 
+### Added
+- **Multi-platform support documentation** - Added comprehensive guides for OpenAI Codex CLI and Google Gemini CLI
+- Example configuration files in `examples/` directory:
+  - `codex-config.toml` - Ready-to-use Codex configuration
+  - `gemini-config.json` - Ready-to-use Gemini configuration
+- Platform-specific setup guides in `docs/`:
+  - `CODEX_SETUP.md` - Complete OpenAI Codex CLI integration guide
+  - `GEMINI_SETUP.md` - Complete Google Gemini CLI integration guide
+
 ### Fixed
 - **Critical: Section extraction now works correctly** - Fixed bug where only 2 sections were extracted instead of all 400+ sections from laws
 - Changed HTML parsing to use correct `<p class="PARA">` elements instead of incorrect `<h3>` selector
@@ -16,11 +25,20 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   - Increased timeout from 10s to 30s for complex pages
 - Verified fix with law 182/2006 (Insolvency Act) - now correctly extracts all 490 sections
 
+### Changed
+- Updated README.md with multi-platform configuration instructions
+- Clarified that the server works with Claude Code, OpenAI Codex, and Google Gemini CLI
+
 ### Technical Details
-The issue was caused by:
+The extraction issue was caused by:
 1. Insufficient wait time for JavaScript to render the page content
 2. Incorrect CSS selector - the website uses `<p class="PARA">` for section containers, not `<h3>`
 3. Section anchors are in `<i id="pXXX">` tags inside the PARA elements
+
+**Platform Compatibility:**
+- All platforms support MCP's stdio transport natively
+- No code changes needed - same server works across all platforms
+- Configuration files follow each platform's conventions
 
 ## [1.3.0] - 2025-11-11
 
