@@ -49,27 +49,44 @@ export async function searchLaws(params: SearchParams): Promise<SearchResult[]> 
 
     const $ = cheerio.load(response.data);
     const results: SearchResult[] = [];
+    const seen = new Set<string>(); // Avoid duplicates
 
     // Parse all links that point to laws (format: /cs/YYYY-NUMBER)
-    $('a[href*="/cs/"]').each((_, element) => {
+    // Only process links that contain "Sb." in text (indicates a law)
+    $('a').each((_, element) => {
       if (results.length >= limit) return false;
 
       const $link = $(element);
       const href = $link.attr('href');
       const linkText = $link.text().trim();
 
-      // Skip navigation links, only process law links
-      if (href && href.match(/\/cs\/\d{4}-\d+/)) {
+      // Only process law links - must have href matching pattern AND contain "Sb."
+      if (href && href.match(/\/cs\/\d{4}-\d+/) && linkText.includes('Sb.')) {
         const code = extractLawCode(linkText, href);
 
-        // Try to get title from surrounding text or next elements
+        // Skip if we've already seen this code
+        if (seen.has(code)) return;
+        seen.add(code);
+
+        // Try to get title from surrounding text
         let title = linkText;
         const parent = $link.parent();
         const parentText = parent.text().trim();
 
         // If parent has more text than just the link, use that as title
         if (parentText.length > linkText.length + 10) {
-          title = parentText;
+          // Remove the link text and "Rozbalit obsah" text
+          title = parentText
+            .replace(linkText, '')
+            .replace(/Rozbalit obsah.*$/i, '')
+            .trim();
+
+          // If we got something meaningful, prepend the link text
+          if (title.length > 5) {
+            title = `${linkText} ${title}`;
+          } else {
+            title = linkText;
+          }
         }
 
         // Clean up title
@@ -98,17 +115,20 @@ export async function fetchLaw(params: FetchLawParams): Promise<LawDocument> {
   try {
     const { lawCode, section } = params;
 
-    // Construct URL for the law
-    const lawUrl = buildLawUrl(lawCode, section);
+    // Construct URL for the law (without section anchor for fetching)
+    const lawUrl = buildLawUrl(lawCode);
 
     const response = await axios.get(lawUrl, {
+      maxRedirects: 5,
+      validateStatus: (status) => status < 400,
       headers: {
         'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36',
         'Accept': 'text/html,application/xhtml+xml,application/xml;q=0.9,image/webp,*/*;q=0.8',
         'Accept-Language': 'cs,en;q=0.9',
         'Accept-Encoding': 'gzip, deflate, br',
         'Connection': 'keep-alive',
-        'Upgrade-Insecure-Requests': '1'
+        'Upgrade-Insecure-Requests': '1',
+        'Cache-Control': 'no-cache'
       }
     });
 
@@ -342,13 +362,23 @@ function extractYear(code: string): number | undefined {
 }
 
 function buildLawUrl(lawCode: string, section?: string): string {
-  const normalizedCode = lawCode.replace('/', '-');
-  let url = `${BASE_URL}/cs/${normalizedCode}`;
+  // Extract year and number from format "182/2006" or "2006-182"
+  let year, number;
 
-  if (section) {
-    const sectionNum = section.replace('§', '').trim();
-    url += `#par${sectionNum}`;
+  if (lawCode.includes('/')) {
+    [number, year] = lawCode.split('/');
+  } else if (lawCode.includes('-')) {
+    [year, number] = lawCode.split('-');
+  } else {
+    // If no separator, assume it's already correct
+    return `${BASE_URL}/cs/${lawCode}`;
   }
+
+  // Build URL in format /cs/YEAR-NUMBER
+  let url = `${BASE_URL}/cs/${year}-${number}`;
+
+  // Note: We don't add section anchor here because it's client-side navigation
+  // The section will be extracted from the full HTML after fetching
 
   return url;
 }
