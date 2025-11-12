@@ -1,9 +1,8 @@
 /**
- * Web scraping utilities for www.zakonyprolidi.cz
+ * Web scraping utilities for www.zakonyprolidi.cz using Playwright
  */
 
-import axios from 'axios';
-import * as cheerio from 'cheerio';
+import { browserManager } from '../utils/browser.js';
 import type {
   SearchResult,
   LawDocument,
@@ -22,6 +21,8 @@ const BASE_URL = 'https://www.zakonyprolidi.cz';
  * Search for laws and legal documents
  */
 export async function searchLaws(params: SearchParams): Promise<SearchResult[]> {
+  const page = await browserManager.newPage();
+
   try {
     const { query, type, year, limit = 10 } = params;
 
@@ -36,75 +37,88 @@ export async function searchLaws(params: SearchParams): Promise<SearchResult[]> 
       searchParams.append('year', year.toString());
     }
 
-    const response = await axios.get(`${searchUrl}?${searchParams.toString()}`, {
-      headers: {
-        'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36',
-        'Accept': 'text/html,application/xhtml+xml,application/xml;q=0.9,image/webp,*/*;q=0.8',
-        'Accept-Language': 'cs,en;q=0.9',
-        'Accept-Encoding': 'gzip, deflate, br',
-        'Connection': 'keep-alive',
-        'Upgrade-Insecure-Requests': '1'
-      }
+    // Navigate to search page
+    await page.goto(`${searchUrl}?${searchParams.toString()}`, {
+      waitUntil: 'domcontentloaded',
+      timeout: 10000
     });
 
-    const $ = cheerio.load(response.data);
-    const results: SearchResult[] = [];
-    const seen = new Set<string>(); // Avoid duplicates
+    // Wait for search results to load
+    await page.waitForTimeout(1000);
 
-    // Parse all links that point to laws (format: /cs/YYYY-NUMBER)
-    // Only process links that contain "Sb." in text (indicates a law)
-    $('a').each((_, element) => {
-      if (results.length >= limit) return false;
+    // Extract results using page.evaluate for optimal performance
+    const results = await page.evaluate((args) => {
+      const [baseUrl, limit] = args as [string, number];
+      const results: SearchResult[] = [];
+      const seen = new Set<string>();
 
-      const $link = $(element);
-      const href = $link.attr('href');
-      const linkText = $link.text().trim();
+      // Find all links that match law pattern
+      document.querySelectorAll('a').forEach((link) => {
+        if (results.length >= limit) return;
 
-      // Only process law links - must have href matching pattern AND contain "Sb."
-      if (href && href.match(/\/cs\/\d{4}-\d+/) && linkText.includes('Sb.')) {
-        const code = extractLawCode(linkText, href);
+        const href = link.getAttribute('href');
+        const linkText = link.textContent?.trim() || '';
 
-        // Skip if we've already seen this code
-        if (seen.has(code)) return;
-        seen.add(code);
+        // Only process law links - must have href matching pattern AND contain "Sb."
+        if (href && href.match(/\/cs\/\d{4}-\d+/) && linkText.includes('Sb.')) {
+          // Extract law code from title or URL
+          const titleMatch = linkText.match(/(\d+\/\d{4})/);
+          const urlMatch = href.match(/\/cs\/(\d{4})-(\d+)/);
 
-        // Try to get title from surrounding text
-        let title = linkText;
-        const parent = $link.parent();
-        const parentText = parent.text().trim();
-
-        // If parent has more text than just the link, use that as title
-        if (parentText.length > linkText.length + 10) {
-          // Remove the link text and "Rozbalit obsah" text
-          title = parentText
-            .replace(linkText, '')
-            .replace(/Rozbalit obsah.*$/i, '')
-            .trim();
-
-          // If we got something meaningful, prepend the link text
-          if (title.length > 5) {
-            title = `${linkText} ${title}`;
-          } else {
-            title = linkText;
+          let code = '';
+          if (titleMatch) {
+            code = titleMatch[1];
+          } else if (urlMatch) {
+            const [, year, number] = urlMatch;
+            code = `${number}/${year}`;
           }
+
+          if (!code || seen.has(code)) return;
+          seen.add(code);
+
+          // Get title from surrounding context
+          let title = linkText;
+          const parent = link.parentElement;
+          if (parent) {
+            const parentText = parent.textContent?.trim() || '';
+            if (parentText.length > linkText.length + 10) {
+              title = parentText
+                .replace(linkText, '')
+                .replace(/Rozbalit obsah.*$/i, '')
+                .trim();
+
+              if (title.length > 5) {
+                title = `${linkText} ${title}`;
+              } else {
+                title = linkText;
+              }
+            }
+          }
+
+          title = title.replace(/\s+/g, ' ').trim();
+
+          // Extract year
+          const yearMatch = code.match(/\/(\d{4})/);
+          const lawYear = yearMatch ? parseInt(yearMatch[1]) : undefined;
+
+          results.push({
+            code,
+            title: title || code,
+            url: href.startsWith('http') ? href : `${baseUrl}${href}`,
+            type: 'law',
+            year: lawYear
+          });
         }
+      });
 
-        // Clean up title
-        title = title.replace(/\s+/g, ' ').trim();
-
-        results.push({
-          code,
-          title: title || code,
-          url: href.startsWith('http') ? href : `${BASE_URL}${href}`,
-          type: type || 'law',
-          year: year || extractYear(code)
-        });
-      }
-    });
+      return results;
+    }, [BASE_URL, limit]);
 
     return results;
   } catch (error) {
     throw new Error(`Search failed: ${error instanceof Error ? error.message : 'Unknown error'}`);
+  } finally {
+    await page.close();
   }
 }
 
@@ -112,106 +126,107 @@ export async function searchLaws(params: SearchParams): Promise<SearchResult[]> 
  * Fetch full text of a specific law
  */
 export async function fetchLaw(params: FetchLawParams): Promise<LawDocument> {
+  const page = await browserManager.newPage();
+
   try {
     const { lawCode, section } = params;
 
-    // Construct URL for the law (without section anchor for fetching)
-    const lawUrl = buildLawUrl(lawCode);
+    // Construct URL for the law
+    const lawUrl = buildLawUrl(lawCode, section);
 
-    const response = await axios.get(lawUrl, {
-      maxRedirects: 5,
-      validateStatus: (status) => status < 400,
-      headers: {
-        'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36',
-        'Accept': 'text/html,application/xhtml+xml,application/xml;q=0.9,image/webp,*/*;q=0.8',
-        'Accept-Language': 'cs,en;q=0.9',
-        'Accept-Encoding': 'gzip, deflate, br',
-        'Connection': 'keep-alive',
-        'Upgrade-Insecure-Requests': '1',
-        'Cache-Control': 'no-cache'
-      }
+    // Navigate to law page
+    await page.goto(lawUrl, {
+      waitUntil: 'domcontentloaded',
+      timeout: 10000
     });
 
-    const $ = cheerio.load(response.data);
+    // Wait for main content to load
+    await page.waitForTimeout(1000);
 
-    // Extract title
-    const title = $('h1, .law-title, title').first().text().trim();
+    // Extract law data
+    const lawData = await page.evaluate((args) => {
+      const [requestedSection] = args;
+      // Extract title
+      const titleElement = document.querySelector('h1, .law-title') as HTMLElement;
+      const title = titleElement?.textContent?.trim() || '';
 
-    // Extract full text
-    let fullText = '';
-    const sections: Section[] = [];
+      // Extract sections
+      const sections: Section[] = [];
+      const h3Elements = document.querySelectorAll('h3');
 
-    // Try to find the main content area
-    const contentSelectors = [
-      '.law-content',
-      '.law-text',
-      '#content',
-      'article',
-      'main'
-    ];
+      h3Elements.forEach((h3) => {
+        const headingText = h3.textContent?.trim() || '';
+        const sectionMatch = headingText.match(/§\s*(\d+[a-z]?)/i);
 
-    let $content = $('body');
-    for (const selector of contentSelectors) {
-      const $candidate = $(selector);
-      if ($candidate.length > 0) {
-        $content = $candidate as any;
-        break;
-      }
-    }
+        if (sectionMatch) {
+          const sectionNumber = `§${sectionMatch[1]}`;
+          const sectionTitle = headingText.replace(/§\s*\d+[a-z]?\s*/i, '').trim();
 
-    // Extract sections - zakonyprolidi.cz uses <h3> for paragraphs
-    $content.find('h3').each((_, element) => {
-      const $heading = $(element);
-      const headingText = $heading.text().trim();
+          // Get text content from following elements until next h3
+          let sectionText = '';
+          let currentElement = h3.nextElementSibling;
 
-      // Check if this is a section/paragraph (starts with §)
-      const sectionMatch = headingText.match(/§\s*(\d+[a-z]?)/i);
-      if (sectionMatch) {
-        const sectionNumber = `§${sectionMatch[1]}`;
-
-        // Extract title (text after section number)
-        const sectionTitle = headingText.replace(/§\s*\d+[a-z]?\s*/i, '').trim();
-
-        // Get text content from following elements until next h3
-        let sectionText = '';
-        let $next = $heading.next();
-
-        while ($next.length > 0 && $next.prop('tagName') !== 'H3' && $next.prop('tagName') !== 'H2') {
-          const text = $next.text().trim();
-          if (text) {
-            sectionText += text + '\n\n';
+          while (currentElement && currentElement.tagName !== 'H3' && currentElement.tagName !== 'H2') {
+            const text = currentElement.textContent?.trim();
+            if (text) {
+              sectionText += text + '\n\n';
+            }
+            currentElement = currentElement.nextElementSibling;
           }
-          $next = $next.next();
+
+          sections.push({
+            number: sectionNumber,
+            title: sectionTitle || undefined,
+            text: sectionText.trim() || headingText
+          });
         }
+      });
 
-        sections.push({
-          number: sectionNumber,
-          title: sectionTitle || undefined,
-          text: sectionText.trim() || headingText
-        });
+      // Extract effective date
+      const dateElement = document.querySelector('time, .effective-date, .date');
+      const effectiveDate = dateElement?.textContent?.trim();
+
+      // Build full text
+      let fullText = '';
+      if (sections.length === 0) {
+        const content = document.querySelector('.law-content, .law-text, #content, article, main, body');
+        fullText = content?.textContent?.trim() || '';
+      } else {
+        fullText = sections.map(s => `${s.number} ${s.title || ''}\n${s.text}`).join('\n\n');
       }
-    });
 
-    // If no sections found, get all text
-    if (sections.length === 0) {
-      fullText = $content.text().trim();
-    } else {
-      fullText = sections.map(s => `${s.number} ${s.title || ''}\n${s.text}`).join('\n\n');
+      return {
+        title,
+        fullText,
+        sections,
+        effectiveDate
+      };
+    }, [section]);
+
+    // Filter for specific section if requested
+    let filteredSections = lawData.sections;
+    if (section && lawData.sections.length > 0) {
+      const normalizedSection = section.replace('§', '').trim();
+      filteredSections = lawData.sections.filter(s =>
+        s.number.includes(normalizedSection) ||
+        s.number.replace('§', '') === normalizedSection
+      );
     }
-
-    // Extract effective date if available
-    const effectiveDate = $('time, .effective-date, .date').first().text().trim();
 
     return {
       code: lawCode,
-      title: title || lawCode,
-      fullText,
+      title: lawData.title || lawCode,
+      fullText: filteredSections.length > 0
+        ? filteredSections.map(s => `${s.number} ${s.title || ''}\n${s.text}`).join('\n\n')
+        : lawData.fullText,
       url: lawUrl,
-      effectiveDate: effectiveDate || undefined,
-      sections: sections.length > 0 ? sections : undefined
+      effectiveDate: lawData.effectiveDate || undefined,
+      sections: filteredSections.length > 0 ? filteredSections : (lawData.sections.length > 0 ? lawData.sections : undefined)
     };
   } catch (error) {
     throw new Error(`Failed to fetch law ${params.lawCode}: ${error instanceof Error ? error.message : 'Unknown error'}`);
+  } finally {
+    await page.close();
   }
 }
 
@@ -219,50 +234,78 @@ export async function fetchLaw(params: FetchLawParams): Promise<LawDocument> {
  * Get changes/amendments to a law
  */
 export async function getLawChanges(params: GetChangesParams): Promise<LawChange[]> {
+  const page = await browserManager.newPage();
+
   try {
     const { lawCode, dateFrom } = params;
 
     // Navigate to the law's changes/history page
     const changesUrl = `${BASE_URL}/cs/${lawCode.replace('/', '-')}/zmeny`;
 
-    const response = await axios.get(changesUrl, {
-      headers: {
-        'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36',
-        'Accept': 'text/html,application/xhtml+xml,application/xml;q=0.9,image/webp,*/*;q=0.8',
-        'Accept-Language': 'cs,en;q=0.9',
-        'Accept-Encoding': 'gzip, deflate, br',
-        'Connection': 'keep-alive',
-        'Upgrade-Insecure-Requests': '1'
-      }
+    await page.goto(changesUrl, {
+      waitUntil: 'domcontentloaded',
+      timeout: 10000
     });
 
-    const $ = cheerio.load(response.data);
-    const changes: LawChange[] = [];
+    await page.waitForTimeout(1000);
 
-    // Parse changes from timeline or table
-    $('.change-item, .amendment-item, tr').each((_, element) => {
-      const $item = $(element);
-      const dateText = $item.find('.date, time, td:first-child').text().trim();
-      const amendingLawText = $item.find('.amending-law, .law-link, td:nth-child(2)').text().trim();
-      const description = $item.find('.description, .change-desc, td:nth-child(3)').text().trim();
+    // Extract changes
+    const changes = await page.evaluate((args) => {
+      const [fromDate] = args;
+      const changes: LawChange[] = [];
 
-      if (dateText) {
-        const date = parseDate(dateText);
-        if (!dateFrom || new Date(date) >= new Date(dateFrom)) {
-          changes.push({
-            date,
-            amendingLaw: amendingLawText || 'Unknown',
-            description: description || 'Amendment',
-            type: determineChangeType(description)
-          });
+      // Parse changes from timeline or table
+      document.querySelectorAll('.change-item, .amendment-item, tr').forEach((item) => {
+        const dateElement = item.querySelector('.date, time, td:first-child');
+        const amendingLawElement = item.querySelector('.amending-law, .law-link, td:nth-child(2)');
+        const descElement = item.querySelector('.description, .change-desc, td:nth-child(3)');
+
+        const dateText = dateElement?.textContent?.trim();
+        const amendingLawText = amendingLawElement?.textContent?.trim();
+        const description = descElement?.textContent?.trim();
+
+        if (dateText) {
+          // Parse Czech date format
+          const czechMatch = dateText.match(/(\d{1,2})\.\s*(\d{1,2})\.\s*(\d{4})/);
+          let date = dateText;
+          if (czechMatch) {
+            const [, day, month, year] = czechMatch;
+            date = `${year}-${month.padStart(2, '0')}-${day.padStart(2, '0')}`;
+          }
+
+          // Check date filter
+          if (!fromDate || new Date(date) >= new Date(fromDate)) {
+            // Determine change type
+            const lowerDesc = (description || '').toLowerCase();
+            let type: 'amendment' | 'repeal' | 'new-provision' | 'other' = 'other';
+
+            if (lowerDesc.includes('zrušen') || lowerDesc.includes('repeal')) {
+              type = 'repeal';
+            } else if (lowerDesc.includes('nový') || lowerDesc.includes('doplněn') || lowerDesc.includes('new')) {
+              type = 'new-provision';
+            } else if (lowerDesc.includes('změn') || lowerDesc.includes('novel') || lowerDesc.includes('amend')) {
+              type = 'amendment';
+            }
+
+            changes.push({
+              date,
+              amendingLaw: amendingLawText || 'Unknown',
+              description: description || 'Amendment',
+              type
+            });
+          }
         }
-      }
-    });
+      });
+
+      return changes;
+    }, [dateFrom]);
 
     return changes;
   } catch (error) {
     // If changes page doesn't exist, return empty array
     return [];
+  } finally {
+    await page.close();
   }
 }
 
@@ -270,6 +313,8 @@ export async function getLawChanges(params: GetChangesParams): Promise<LawChange
  * Search for specific sections across laws
  */
 export async function searchSections(params: SearchSectionsParams): Promise<Section[]> {
+  const page = await browserManager.newPage();
+
   try {
     const { sectionNumber, keyword, lawCode } = params;
 
@@ -290,39 +335,44 @@ export async function searchSections(params: SearchSectionsParams): Promise<Sect
 
     const searchUrl = `${BASE_URL}/hledani?q=${encodeURIComponent(searchQuery)}`;
 
-    const response = await axios.get(searchUrl, {
-      headers: {
-        'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36',
-        'Accept': 'text/html,application/xhtml+xml,application/xml;q=0.9,image/webp,*/*;q=0.8',
-        'Accept-Language': 'cs,en;q=0.9',
-        'Accept-Encoding': 'gzip, deflate, br',
-        'Connection': 'keep-alive',
-        'Upgrade-Insecure-Requests': '1'
-      }
+    await page.goto(searchUrl, {
+      waitUntil: 'domcontentloaded',
+      timeout: 10000
     });
 
-    const $ = cheerio.load(response.data);
-    const sections: Section[] = [];
+    await page.waitForTimeout(1000);
 
-    // Find section matches
-    $('.section-result, .paragraph-result').each((_, element) => {
-      const $section = $(element);
-      const number = $section.find('.section-number, .par-number').text().trim();
-      const title = $section.find('.section-title').text().trim();
-      const text = $section.find('.section-text, .par-text').text().trim();
+    // Extract sections from search results
+    const sections = await page.evaluate((args) => {
+      const [sectionNum] = args;
+      const sections: Section[] = [];
 
-      if (text) {
-        sections.push({
-          number: number || sectionNumber || '',
-          title: title || undefined,
-          text
-        });
-      }
-    });
+      document.querySelectorAll('.section-result, .paragraph-result').forEach((element) => {
+        const numberElement = element.querySelector('.section-number, .par-number');
+        const titleElement = element.querySelector('.section-title');
+        const textElement = element.querySelector('.section-text, .par-text');
+
+        const number = numberElement?.textContent?.trim();
+        const title = titleElement?.textContent?.trim();
+        const text = textElement?.textContent?.trim();
+
+        if (text) {
+          sections.push({
+            number: number || sectionNum || '',
+            title: title || undefined,
+            text
+          });
+        }
+      });
+
+      return sections;
+    }, [sectionNumber]);
 
     return sections;
   } catch (error) {
     throw new Error(`Section search failed: ${error instanceof Error ? error.message : 'Unknown error'}`);
+  } finally {
+    await page.close();
   }
 }
 
@@ -338,28 +388,6 @@ function mapDocumentType(type: DocumentType): string {
     'court-decision': 'soudni'
   };
   return typeMap[type] || 'vse';
-}
-
-function extractLawCode(title: string, url: string): string {
-  // Try to extract from title (e.g., "89/2012 Sb.")
-  const titleMatch = title.match(/(\d+\/\d{4})/);
-  if (titleMatch) {
-    return titleMatch[1];
-  }
-
-  // Try to extract from URL
-  const urlMatch = url.match(/\/cs\/(\d{4})-(\d+)/);
-  if (urlMatch) {
-    const [, year, number] = urlMatch;
-    return `${number}/${year}`;
-  }
-
-  return title.substring(0, 50);
-}
-
-function extractYear(code: string): number | undefined {
-  const match = code.match(/\/(\d{4})/);
-  return match ? parseInt(match[1]) : undefined;
 }
 
 function buildLawUrl(lawCode: string, section?: string): string {
@@ -378,35 +406,11 @@ function buildLawUrl(lawCode: string, section?: string): string {
   // Build URL in format /cs/YEAR-NUMBER
   let url = `${BASE_URL}/cs/${year}-${number}`;
 
-  // Note: We don't add section anchor here because it's client-side navigation
-  // The section will be extracted from the full HTML after fetching
+  // Add section anchor for direct navigation
+  if (section) {
+    const normalizedSection = section.replace('§', '').replace(/\s+/g, '');
+    url += `#p${normalizedSection}`;
+  }
 
   return url;
-}
-
-function parseDate(dateText: string): string {
-  // Try to parse Czech date format (e.g., "1. 1. 2013")
-  const czechMatch = dateText.match(/(\d{1,2})\.\s*(\d{1,2})\.\s*(\d{4})/);
-  if (czechMatch) {
-    const [, day, month, year] = czechMatch;
-    return `${year}-${month.padStart(2, '0')}-${day.padStart(2, '0')}`;
-  }
-
-  return dateText;
-}
-
-function determineChangeType(description: string): 'amendment' | 'repeal' | 'new-provision' | 'other' {
-  const lowerDesc = description.toLowerCase();
-
-  if (lowerDesc.includes('zrušen') || lowerDesc.includes('repeal')) {
-    return 'repeal';
-  }
-  if (lowerDesc.includes('nový') || lowerDesc.includes('doplněn') || lowerDesc.includes('new')) {
-    return 'new-provision';
-  }
-  if (lowerDesc.includes('změn') || lowerDesc.includes('novel') || lowerDesc.includes('amend')) {
-    return 'amendment';
-  }
-
-  return 'other';
 }
