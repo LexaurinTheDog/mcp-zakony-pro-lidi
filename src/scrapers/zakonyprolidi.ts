@@ -39,12 +39,16 @@ export async function searchLaws(params: SearchParams): Promise<SearchResult[]> 
 
     // Navigate to search page
     await page.goto(`${searchUrl}?${searchParams.toString()}`, {
-      waitUntil: 'domcontentloaded',
-      timeout: 10000
+      waitUntil: 'networkidle',
+      timeout: 30000
     });
 
     // Wait for search results to load
-    await page.waitForTimeout(1000);
+    try {
+      await page.waitForSelector('a[href*="/cs/"]', { timeout: 5000 });
+    } catch {
+      await page.waitForTimeout(2000);
+    }
 
     // Extract results using page.evaluate for optimal performance
     const results = await page.evaluate((args) => {
@@ -136,12 +140,17 @@ export async function fetchLaw(params: FetchLawParams): Promise<LawDocument> {
 
     // Navigate to law page
     await page.goto(lawUrl, {
-      waitUntil: 'domcontentloaded',
-      timeout: 10000
+      waitUntil: 'networkidle',
+      timeout: 30000
     });
 
-    // Wait for main content to load
-    await page.waitForTimeout(1000);
+    // Wait for main content to load - wait for actual law content
+    try {
+      await page.waitForSelector('h3, .law-content, #content', { timeout: 5000 });
+    } catch {
+      // Fallback timeout if selector not found
+      await page.waitForTimeout(2000);
+    }
 
     // Extract law data
     const lawData = await page.evaluate((args) => {
@@ -150,36 +159,46 @@ export async function fetchLaw(params: FetchLawParams): Promise<LawDocument> {
       const titleElement = document.querySelector('h1, .law-title') as HTMLElement;
       const title = titleElement?.textContent?.trim() || '';
 
-      // Extract sections
+      // Extract sections - paragraphs are in <p class="PARA"> elements
       const sections: Section[] = [];
-      const h3Elements = document.querySelectorAll('h3');
+      const paraElements = document.querySelectorAll('p.PARA');
 
-      h3Elements.forEach((h3) => {
-        const headingText = h3.textContent?.trim() || '';
-        const sectionMatch = headingText.match(/§\s*(\d+[a-z]?)/i);
+      paraElements.forEach((paraElement) => {
+        // Find the <i id="pXXX"> inside this PARA element
+        const iParagraph = paraElement.querySelector('i[id^="p"]');
+        if (!iParagraph) return;
 
-        if (sectionMatch) {
-          const sectionNumber = `§${sectionMatch[1]}`;
-          const sectionTitle = headingText.replace(/§\s*\d+[a-z]?\s*/i, '').trim();
+        const paragraphId = iParagraph.id;
 
-          // Get text content from following elements until next h3
-          let sectionText = '';
-          let currentElement = h3.nextElementSibling;
+        // Extract section number from id (e.g., "p56" -> "§56")
+        const numberMatch = paragraphId.match(/^p(\d+)$/);
+        if (!numberMatch) return; // Skip sub-paragraphs like "p1-1"
 
-          while (currentElement && currentElement.tagName !== 'H3' && currentElement.tagName !== 'H2') {
-            const text = currentElement.textContent?.trim();
-            if (text) {
-              sectionText += text + '\n\n';
-            }
-            currentElement = currentElement.nextElementSibling;
-          }
+        const sectionNumber = `§${numberMatch[1]}`;
 
-          sections.push({
-            number: sectionNumber,
-            title: sectionTitle || undefined,
-            text: sectionText.trim() || headingText
-          });
+        // Get section title from the next h3 element if it exists
+        let sectionTitle = '';
+        let nextElement = paraElement.nextElementSibling;
+        if (nextElement && nextElement.tagName === 'H3') {
+          sectionTitle = nextElement.textContent?.trim() || '';
+          nextElement = nextElement.nextElementSibling;
         }
+
+        // Collect text content from all following elements until next PARA
+        let sectionText = '';
+        while (nextElement && !nextElement.classList.contains('PARA')) {
+          const text = nextElement.textContent?.trim();
+          if (text && nextElement.tagName !== 'H3') {
+            sectionText += text + '\n\n';
+          }
+          nextElement = nextElement.nextElementSibling;
+        }
+
+        sections.push({
+          number: sectionNumber,
+          title: sectionTitle || undefined,
+          text: sectionText.trim() || sectionTitle
+        });
       });
 
       // Extract effective date
@@ -243,11 +262,15 @@ export async function getLawChanges(params: GetChangesParams): Promise<LawChange
     const changesUrl = `${BASE_URL}/cs/${lawCode.replace('/', '-')}/zmeny`;
 
     await page.goto(changesUrl, {
-      waitUntil: 'domcontentloaded',
-      timeout: 10000
+      waitUntil: 'networkidle',
+      timeout: 30000
     });
 
-    await page.waitForTimeout(1000);
+    try {
+      await page.waitForSelector('.change-item, .amendment-item, tr', { timeout: 5000 });
+    } catch {
+      await page.waitForTimeout(2000);
+    }
 
     // Extract changes
     const changes = await page.evaluate((args) => {
@@ -336,11 +359,15 @@ export async function searchSections(params: SearchSectionsParams): Promise<Sect
     const searchUrl = `${BASE_URL}/hledani?q=${encodeURIComponent(searchQuery)}`;
 
     await page.goto(searchUrl, {
-      waitUntil: 'domcontentloaded',
-      timeout: 10000
+      waitUntil: 'networkidle',
+      timeout: 30000
     });
 
-    await page.waitForTimeout(1000);
+    try {
+      await page.waitForSelector('.section-result, .paragraph-result, a', { timeout: 5000 });
+    } catch {
+      await page.waitForTimeout(2000);
+    }
 
     // Extract sections from search results
     const sections = await page.evaluate((args) => {
