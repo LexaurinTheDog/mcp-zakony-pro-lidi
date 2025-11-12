@@ -355,10 +355,16 @@ Claude: [Použije search_sections s keyword "přeplatek" a lawCode "280/2009"]
 
 ### Technologie
 
-**Verze 1.3.0** přináší významná vylepšení pomocí Playwright:
+**Verze 1.3.1** obsahuje kritické opravy extrakce obsahu:
 
-#### ⚡ Playwright Web Scraping
-Server nyní používá **Playwright** místo axios + cheerio pro stahování obsahu, což přináší:
+#### 🐛 Opravy v 1.3.1
+- **Opravena extrakce sekcí** - Nyní správně extrahuje všech 400+ sekcí zákonů (dříve pouze 2)
+- **Správná HTML struktura** - Použití `<p class="PARA">` elementů místo `<h3>`
+- **Vylepšené čekání na obsah** - `networkidle` + `waitForSelector` pro jistotu načtení JS
+- **Testováno na IZ** - Ověřeno na zákoně 182/2006 (490 sekcí)
+
+#### ⚡ Playwright Web Scraping (od 1.3.0)
+Server používá **Playwright** místo axios + cheerio pro stahování obsahu, což přináší:
 
 - **Robustnější scraping** - Playwright spouští skutečný prohlížeč a vidí finální vykreslený obsah
 - **Dynamický obsah** - Načítá JavaScript-renderované elementy, které axios nevidí
@@ -620,10 +626,16 @@ Claude: [Uses get_law_changes with lawCode "89/2012" and dateFrom "2022-01-01"]
 
 ### Technology
 
-**Version 1.3.0** introduces significant improvements using Playwright:
+**Version 1.3.1** includes critical content extraction fixes:
 
-#### ⚡ Playwright Web Scraping
-The server now uses **Playwright** instead of axios + cheerio for content fetching, providing:
+#### 🐛 Fixes in 1.3.1
+- **Fixed section extraction** - Now correctly extracts all 400+ law sections (previously only 2)
+- **Correct HTML structure** - Uses `<p class="PARA">` elements instead of `<h3>`
+- **Improved content loading** - `networkidle` + `waitForSelector` ensures JS completion
+- **Tested on Insolvency Act** - Verified with law 182/2006 (490 sections)
+
+#### ⚡ Playwright Web Scraping (since 1.3.0)
+The server uses **Playwright** instead of axios + cheerio for content fetching, providing:
 
 - **Robust scraping** - Playwright launches a real browser and sees the final rendered content
 - **Dynamic content** - Loads JavaScript-rendered elements that axios cannot see
