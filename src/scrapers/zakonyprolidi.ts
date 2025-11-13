@@ -45,7 +45,7 @@ export async function searchLaws(params: SearchParams): Promise<SearchResult[]> 
 
     // Wait for search results to load
     try {
-      await page.waitForSelector('a[href*="/cs/"]', { timeout: 5000 });
+      await page.waitForSelector('a[href*="/cs/"]', { timeout: 10000 });
     } catch {
       await page.waitForTimeout(2000);
     }
@@ -131,12 +131,12 @@ export async function searchLaws(params: SearchParams): Promise<SearchResult[]> 
  */
 export async function fetchLaw(params: FetchLawParams): Promise<LawDocument> {
   const page = await browserManager.newPage();
+  const { lawCode, section } = params;
+
+  // Construct URL for the law
+  const lawUrl = buildLawUrl(lawCode, section);
 
   try {
-    const { lawCode, section } = params;
-
-    // Construct URL for the law
-    const lawUrl = buildLawUrl(lawCode, section);
 
     // Navigate to law page
     await page.goto(lawUrl, {
@@ -146,15 +146,14 @@ export async function fetchLaw(params: FetchLawParams): Promise<LawDocument> {
 
     // Wait for main content to load - wait for actual law content
     try {
-      await page.waitForSelector('h3, .law-content, #content', { timeout: 5000 });
+      await page.waitForSelector('h3, .law-content, #content', { timeout: 10000 });
     } catch {
       // Fallback timeout if selector not found
       await page.waitForTimeout(2000);
     }
 
     // Extract law data
-    const lawData = await page.evaluate((args) => {
-      const [requestedSection] = args;
+    const lawData = await page.evaluate(() => {
       // Extract title
       const titleElement = document.querySelector('h1, .law-title') as HTMLElement;
       const title = titleElement?.textContent?.trim() || '';
@@ -170,9 +169,9 @@ export async function fetchLaw(params: FetchLawParams): Promise<LawDocument> {
 
         const paragraphId = iParagraph.id;
 
-        // Extract section number from id (e.g., "p56" -> "§56")
-        const numberMatch = paragraphId.match(/^p(\d+)$/);
-        if (!numberMatch) return; // Skip sub-paragraphs like "p1-1"
+        // Extract section number from id (e.g., "p56" -> "§56", "p88a" -> "§88a")
+        const numberMatch = paragraphId.match(/^p(\d+[a-z]?)$/i);
+        if (!numberMatch) return; // Skip complex sub-paragraphs like "p1-1"
 
         const sectionNumber = `§${numberMatch[1]}`;
 
@@ -181,23 +180,25 @@ export async function fetchLaw(params: FetchLawParams): Promise<LawDocument> {
         let nextElement = paraElement.nextElementSibling;
         if (nextElement && nextElement.tagName === 'H3') {
           sectionTitle = nextElement.textContent?.trim() || '';
-          nextElement = nextElement.nextElementSibling;
         }
 
-        // Collect text content from all following elements until next PARA
-        let sectionText = '';
-        while (nextElement && !nextElement.classList.contains('PARA')) {
-          const text = nextElement.textContent?.trim();
-          if (text && nextElement.tagName !== 'H3') {
-            sectionText += text + '\n\n';
-          }
-          nextElement = nextElement.nextElementSibling;
-        }
+        // **FIX: Text is INSIDE the PARA element, not in siblings after it**
+        let sectionText = paraElement.textContent?.trim() || '';
+
+        // Clean up the text:
+        // - Remove zero-width characters
+        // - Remove leading newlines
+        // - Remove section number prefix if present
+        sectionText = sectionText
+          .replace(/[\u200B-\u200D\uFEFF]/g, '') // Zero-width characters
+          .replace(/^\s*\n+/, '')                 // Leading newlines
+          .trim()
+          .replace(/^§?\s*\d+[a-z]?\s*/, '');    // Remove section number prefix
 
         sections.push({
           number: sectionNumber,
           title: sectionTitle || undefined,
-          text: sectionText.trim() || sectionTitle
+          text: sectionText || '(Text není dostupný)'
         });
       });
 
@@ -220,7 +221,7 @@ export async function fetchLaw(params: FetchLawParams): Promise<LawDocument> {
         sections,
         effectiveDate
       };
-    }, [section]);
+    });
 
     // Filter for specific section if requested
     let filteredSections = lawData.sections;
@@ -243,7 +244,11 @@ export async function fetchLaw(params: FetchLawParams): Promise<LawDocument> {
       sections: filteredSections.length > 0 ? filteredSections : (lawData.sections.length > 0 ? lawData.sections : undefined)
     };
   } catch (error) {
-    throw new Error(`Failed to fetch law ${params.lawCode}: ${error instanceof Error ? error.message : 'Unknown error'}`);
+    const errorMsg = error instanceof Error ? error.message : 'Unknown error';
+    throw new Error(
+      `Failed to fetch law ${params.lawCode}${params.section ? ` section §${params.section}` : ''} ` +
+      `from ${lawUrl}: ${errorMsg}`
+    );
   } finally {
     await page.close();
   }
@@ -336,70 +341,51 @@ export async function getLawChanges(params: GetChangesParams): Promise<LawChange
  * Search for specific sections across laws
  */
 export async function searchSections(params: SearchSectionsParams): Promise<Section[]> {
-  const page = await browserManager.newPage();
-
   try {
     const { sectionNumber, keyword, lawCode } = params;
 
-    let searchQuery = '';
-    if (sectionNumber) {
-      searchQuery = sectionNumber;
-    }
-    if (keyword) {
-      searchQuery += (searchQuery ? ' ' : '') + keyword;
-    }
-    if (lawCode) {
-      searchQuery += ` ${lawCode}`;
-    }
+    // **FIX: If we have lawCode and sectionNumber, fetch the law directly**
+    // zakonyprolidi.cz search doesn't return individual sections, only law titles
+    if (lawCode && sectionNumber) {
+      const normalizedSection = sectionNumber.replace('§', '').trim();
 
-    if (!searchQuery) {
-      throw new Error('At least one search parameter required');
-    }
+      try {
+        const law = await fetchLaw({ lawCode, section: normalizedSection });
 
-    const searchUrl = `${BASE_URL}/hledani?q=${encodeURIComponent(searchQuery)}`;
-
-    await page.goto(searchUrl, {
-      waitUntil: 'networkidle',
-      timeout: 30000
-    });
-
-    try {
-      await page.waitForSelector('.section-result, .paragraph-result, a', { timeout: 5000 });
-    } catch {
-      await page.waitForTimeout(2000);
-    }
-
-    // Extract sections from search results
-    const sections = await page.evaluate((args) => {
-      const [sectionNum] = args;
-      const sections: Section[] = [];
-
-      document.querySelectorAll('.section-result, .paragraph-result').forEach((element) => {
-        const numberElement = element.querySelector('.section-number, .par-number');
-        const titleElement = element.querySelector('.section-title');
-        const textElement = element.querySelector('.section-text, .par-text');
-
-        const number = numberElement?.textContent?.trim();
-        const title = titleElement?.textContent?.trim();
-        const text = textElement?.textContent?.trim();
-
-        if (text) {
-          sections.push({
-            number: number || sectionNum || '',
-            title: title || undefined,
-            text
-          });
+        if (law.sections && law.sections.length > 0) {
+          // Filter for the specific section
+          const filtered = law.sections.filter(s =>
+            s.number.includes(normalizedSection) ||
+            s.number.replace('§', '') === normalizedSection
+          );
+          return filtered;
         }
-      });
+        return [];
+      } catch (error) {
+        throw new Error(
+          `Failed to fetch section ${sectionNumber} from law ${lawCode}: ${error instanceof Error ? error.message : 'Unknown error'}`
+        );
+      }
+    }
 
-      return sections;
-    }, [sectionNumber]);
+    // **For keyword-only search - not yet supported**
+    // zakonyprolidi.cz doesn't return individual sections in search results
+    if (keyword) {
+      // This would require complex implementation:
+      // 1. Search for laws by keyword
+      // 2. Fetch full text of each law
+      // 3. Filter sections containing the keyword
+      // This is very performance-intensive, better to return empty results
+      console.warn('Keyword-only search not yet implemented for zakonyprolidi.cz');
+      return [];
+    }
 
-    return sections;
+    return [];
   } catch (error) {
+    if (error instanceof Error) {
+      throw error;
+    }
     throw new Error(`Section search failed: ${error instanceof Error ? error.message : 'Unknown error'}`);
-  } finally {
-    await page.close();
   }
 }
 

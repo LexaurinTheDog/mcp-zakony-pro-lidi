@@ -46,8 +46,16 @@ class BrowserManager {
    * Get or create browser context with proper settings
    */
   async getContext(): Promise<BrowserContext> {
-    if (this.context && !this.context.pages().length) {
-      return this.context;
+    // Return existing context if it exists and is functional
+    if (this.context) {
+      try {
+        // Test if context is still functional
+        this.context.pages();
+        return this.context;
+      } catch {
+        // Context is dead, create a new one
+        this.context = null;
+      }
     }
 
     const browser = await this.getBrowser();
@@ -71,8 +79,8 @@ class BrowserManager {
     const page = await context.newPage();
 
     // Set reasonable timeouts
-    page.setDefaultTimeout(10000);
-    page.setDefaultNavigationTimeout(10000);
+    page.setDefaultTimeout(30000);
+    page.setDefaultNavigationTimeout(30000);
 
     return page;
   }

@@ -46,7 +46,11 @@ export async function handleFetchLaw(args: unknown) {
       law = await fetchKurzy(params);
       source = 'kurzy.cz';
     } catch (fallbackError) {
-      throw new Error(`Failed to fetch law ${params.lawCode} from both sources: ${error instanceof Error ? error.message : 'Unknown error'}`);
+      throw new Error(
+        `Failed to fetch law ${params.lawCode} from both sources.\n` +
+        `Primary error (zakonyprolidi.cz): ${error instanceof Error ? error.message : 'Unknown'}\n` +
+        `Fallback error (kurzy.cz): ${fallbackError instanceof Error ? fallbackError.message : 'Unknown'}`
+      );
     }
   }
 
@@ -73,7 +77,14 @@ export async function handleFetchLaw(args: unknown) {
       responseText += section.text;
     } else {
       responseText += `Section ${params.section} not found in the law.\n\n`;
-      responseText += `Available sections: ${law.sections.map(s => s.number).join(', ')}`;
+
+      if (law.sections.length > 50) {
+        responseText += `This law contains ${law.sections.length} sections.\n`;
+        responseText += `First 10: ${law.sections.slice(0, 10).map(s => s.number).join(', ')}, ...\n`;
+        responseText += `Last 10: ..., ${law.sections.slice(-10).map(s => s.number).join(', ')}`;
+      } else {
+        responseText += `Available sections: ${law.sections.map(s => s.number).join(', ')}`;
+      }
     }
   } else {
     // Return full law text
